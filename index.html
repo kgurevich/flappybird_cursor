@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyber Dragon - Nightcore Edition</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(45deg, #0a0a0a, #1a0033, #330066, #0a0a0a);
+            background-size: 400% 400%;
+            animation: cyberpunkGlow 4s ease-in-out infinite;
+            font-family: 'Orbitron', monospace;
+            overflow: hidden;
+        }
+        
+        @keyframes cyberpunkGlow {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        
+        canvas {
+            border: 3px solid #00ffff;
+            border-radius: 15px;
+            box-shadow: 
+                0 0 20px #00ffff,
+                0 0 40px #ff00ff,
+                inset 0 0 20px rgba(0, 255, 255, 0.1);
+            animation: borderPulse 2s ease-in-out infinite alternate;
+        }
+        
+        @keyframes borderPulse {
+            0% { 
+                border-color: #00ffff;
+                box-shadow: 
+                    0 0 20px #00ffff,
+                    0 0 40px #ff00ff,
+                    inset 0 0 20px rgba(0, 255, 255, 0.1);
+            }
+            100% { 
+                border-color: #ff00ff;
+                box-shadow: 
+                    0 0 20px #ff00ff,
+                    0 0 40px #00ffff,
+                    inset 0 0 20px rgba(255, 0, 255, 0.1);
+            }
+        }
+        
+        .game-info {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #00ffff;
+            font-size: 24px;
+            font-weight: 900;
+            text-shadow: 
+                0 0 10px #00ffff,
+                0 0 20px #00ffff,
+                0 0 30px #00ffff;
+            z-index: 10;
+            text-align: center;
+        }
+        
+        .instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #ff00ff;
+            font-size: 16px;
+            text-align: center;
+            text-shadow: 
+                0 0 10px #ff00ff,
+                0 0 20px #ff00ff;
+            z-index: 10;
+            animation: instructionGlow 3s ease-in-out infinite alternate;
+        }
+        
+        @keyframes instructionGlow {
+            0% { color: #ff00ff; text-shadow: 0 0 10px #ff00ff, 0 0 20px #ff00ff; }
+            100% { color: #00ffff; text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff; }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-info">
+        <div id="score">SCORE: 0</div>
+        <div id="gameStatus"></div>
+    </div>
+    
+    <canvas id="gameCanvas" width="400" height="600"></canvas>
+    
+    <div class="instructions">
+        <div>HOLD SPACE to boost the cyber dragon</div>
+        <div>Press R to restart • Avoid the neon barriers</div>
+    </div>
+
+    <script>
+        // Game variables - cyberpunk edition
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const statusElement = document.getElementById('gameStatus');
+        
+        // Game state
+        let gameState = 'playing'; // 'playing', 'gameOver'
+        let score = 0;
+        let frameCount = 0;
+        let spacePressed = false; // Track if space is being held
+        
+        // Cyber Dragon properties
+        const dragon = {
+            x: 80,
+            y: canvas.height / 2,
+            width: 25,
+            height: 20,
+            velocity: 0,
+            gravity: 0.4,
+            boostPower: -0.8, // Continuous boost when holding space
+            maxVelocity: 8,
+            color: '#ff00ff',
+            glowColor: '#00ffff'
+        };
+        
+        // Neon barriers array
+        const barriers = [];
+        const barrierWidth = 50;
+        const barrierGap = 160;
+        const barrierSpeed = 2.5;
+        
+        // Particle system for cyberpunk effects
+        const particles = [];
+        
+        // Create particle
+        function createParticle(x, y, color) {
+            particles.push({
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 4,
+                vy: (Math.random() - 0.5) * 4,
+                life: 1.0,
+                decay: 0.02,
+                color: color,
+                size: Math.random() * 3 + 1
+            });
+        }
+        
+        // Update particles
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= p.decay;
+                p.size *= 0.98;
+                
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+        
+        // Draw particles
+        function drawParticles() {
+            particles.forEach(p => {
+                ctx.save();
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = p.color;
+                ctx.fillRect(p.x, p.y, p.size, p.size);
+                ctx.restore();
+            });
+        }
+        
+        // Lazy barrier generation - cyberpunk style
+        function createBarrier() {
+            const gapStart = Math.random() * (canvas.height - barrierGap - 100) + 50;
+            barriers.push({
+                x: canvas.width,
+                topHeight: gapStart,
+                bottomY: gapStart + barrierGap,
+                bottomHeight: canvas.height - (gapStart + barrierGap),
+                passed: false,
+                glowPhase: Math.random() * Math.PI * 2
+            });
+        }
+        
+        // Dragon physics - cyberpunk edition
+        function updateDragon() {
+            if (gameState !== 'playing') return;
+            
+            // Apply boost if space is held
+            if (spacePressed) {
+                dragon.velocity += dragon.boostPower;
+                // Create boost particles
+                if (frameCount % 3 === 0) {
+                    createParticle(
+                        dragon.x - 5, 
+                        dragon.y + dragon.height/2, 
+                        Math.random() > 0.5 ? '#00ffff' : '#ff00ff'
+                    );
+                }
+            }
+            
+            // Apply gravity
+            dragon.velocity += dragon.gravity;
+            
+            // Limit velocity
+            if (dragon.velocity > dragon.maxVelocity) dragon.velocity = dragon.maxVelocity;
+            if (dragon.velocity < -dragon.maxVelocity) dragon.velocity = -dragon.maxVelocity;
+            
+            dragon.y += dragon.velocity;
+            
+            // Boundary checking
+            if (dragon.y < 0) {
+                dragon.y = 0;
+                dragon.velocity = 0;
+            }
+            if (dragon.y + dragon.height > canvas.height) {
+                gameOver();
+            }
+        }
+        
+        // Barrier management - neon style
+        function updateBarriers() {
+            if (gameState !== 'playing') return;
+            
+            // Generate new barriers
+            if (frameCount % 150 === 0) {
+                createBarrier();
+            }
+            
+            // Update existing barriers
+            for (let i = barriers.length - 1; i >= 0; i--) {
+                const barrier = barriers[i];
+                barrier.x -= barrierSpeed;
+                barrier.glowPhase += 0.1;
+                
+                // Score when dragon passes barrier
+                if (!barrier.passed && barrier.x + barrierWidth < dragon.x) {
+                    barrier.passed = true;
+                    score++;
+                    scoreElement.textContent = `SCORE: ${score}`;
+                    
+                    // Score particles
+                    for (let j = 0; j < 10; j++) {
+                        createParticle(
+                            dragon.x + dragon.width/2,
+                            dragon.y + dragon.height/2,
+                            '#00ff00'
+                        );
+                    }
+                }
+                
+                // Remove off-screen barriers
+                if (barrier.x + barrierWidth < 0) {
+                    barriers.splice(i, 1);
+                }
+                
+                // Collision detection
+                if (dragon.x < barrier.x + barrierWidth &&
+                    dragon.x + dragon.width > barrier.x &&
+                    (dragon.y < barrier.topHeight || 
+                     dragon.y + dragon.height > barrier.bottomY)) {
+                    gameOver();
+                }
+            }
+        }
+        
+        // Cyberpunk rendering
+        function render() {
+            // Clear canvas with animated cyberpunk background
+            const bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            const phase = frameCount * 0.02;
+            bgGradient.addColorStop(0, `hsl(${280 + Math.sin(phase) * 20}, 70%, 10%)`);
+            bgGradient.addColorStop(0.5, `hsl(${200 + Math.cos(phase) * 30}, 80%, 5%)`);
+            bgGradient.addColorStop(1, `hsl(${320 + Math.sin(phase * 1.5) * 25}, 60%, 8%)`);
+            ctx.fillStyle = bgGradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw grid pattern
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.1)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < canvas.width; i += 20) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, canvas.height);
+                ctx.stroke();
+            }
+            for (let i = 0; i < canvas.height; i += 20) {
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                ctx.lineTo(canvas.width, i);
+                ctx.stroke();
+            }
+            
+            // Draw neon barriers
+            barriers.forEach(barrier => {
+                const glowIntensity = Math.sin(barrier.glowPhase) * 0.5 + 0.5;
+                const glowColor = `hsl(${180 + glowIntensity * 60}, 100%, 50%)`;
+                
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = glowColor;
+                ctx.fillStyle = glowColor;
+                
+                // Top barrier
+                ctx.fillRect(barrier.x, 0, barrierWidth, barrier.topHeight);
+                // Bottom barrier
+                ctx.fillRect(barrier.x, barrier.bottomY, barrierWidth, barrier.bottomHeight);
+                
+                // Barrier caps with extra glow
+                ctx.shadowBlur = 30;
+                ctx.fillRect(barrier.x - 5, barrier.topHeight - 15, barrierWidth + 10, 15);
+                ctx.fillRect(barrier.x - 5, barrier.bottomY, barrierWidth + 10, 15);
+            });
+            
+            // Reset shadow
+            ctx.shadowBlur = 0;
+            
+            // Draw particles
+            drawParticles();
+            
+            // Draw cyber dragon
+            const dragonGlow = spacePressed ? '#00ffff' : '#ff00ff';
+            const dragonCore = spacePressed ? '#ffffff' : '#ff0080';
+            
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = dragonGlow;
+            ctx.fillStyle = dragonGlow;
+            ctx.fillRect(dragon.x - 2, dragon.y - 2, dragon.width + 4, dragon.height + 4);
+            
+            ctx.shadowBlur = 5;
+            ctx.fillStyle = dragonCore;
+            ctx.fillRect(dragon.x, dragon.y, dragon.width, dragon.height);
+            
+            // Dragon details
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#ffffff';
+            // Eyes
+            ctx.fillRect(dragon.x + 18, dragon.y + 4, 4, 3);
+            ctx.fillRect(dragon.x + 18, dragon.y + 13, 4, 3);
+            // Spikes
+            ctx.fillRect(dragon.x + 5, dragon.y - 3, 2, 3);
+            ctx.fillRect(dragon.x + 10, dragon.y - 4, 2, 4);
+            ctx.fillRect(dragon.x + 15, dragon.y - 3, 2, 3);
+            
+            // Boost trail when space is held
+            if (spacePressed) {
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#00ffff';
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
+                ctx.fillRect(dragon.x - 15, dragon.y + 5, 15, 10);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.fillRect(dragon.x - 10, dragon.y + 7, 10, 6);
+            }
+            
+            // Game over overlay - cyberpunk style
+            if (gameState === 'gameOver') {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#ff0000';
+                ctx.fillStyle = '#ff0000';
+                ctx.font = '36px Orbitron';
+                ctx.textAlign = 'center';
+                ctx.fillText('SYSTEM FAILURE', canvas.width / 2, canvas.height / 2 - 50);
+                
+                ctx.shadowColor = '#00ffff';
+                ctx.fillStyle = '#00ffff';
+                ctx.font = '20px Orbitron';
+                ctx.fillText(`FINAL SCORE: ${score}`, canvas.width / 2, canvas.height / 2);
+                ctx.fillText('Press R to reboot system', canvas.width / 2, canvas.height / 2 + 40);
+            }
+            
+            ctx.shadowBlur = 0;
+        }
+        
+        // Game loop - cyberpunk edition
+        function gameLoop() {
+            frameCount++;
+            updateDragon();
+            updateBarriers();
+            updateParticles();
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        function gameOver() {
+            gameState = 'gameOver';
+            statusElement.textContent = 'SYSTEM FAILURE!';
+            
+            // Explosion particles
+            for (let i = 0; i < 30; i++) {
+                createParticle(
+                    dragon.x + dragon.width/2,
+                    dragon.y + dragon.height/2,
+                    Math.random() > 0.5 ? '#ff0000' : '#ffff00'
+                );
+            }
+        }
+        
+        function restart() {
+            gameState = 'playing';
+            score = 0;
+            frameCount = 0;
+            dragon.y = canvas.height / 2;
+            dragon.velocity = 0;
+            barriers.length = 0;
+            particles.length = 0;
+            spacePressed = false;
+            scoreElement.textContent = 'SCORE: 0';
+            statusElement.textContent = '';
+        }
+        
+        // Event listeners - hold space edition
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                spacePressed = true;
+            } else if (e.code === 'KeyR') {
+                restart();
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                spacePressed = false;
+            }
+        });
+        
+        // Mouse/touch support for mobile
+        canvas.addEventListener('mousedown', () => spacePressed = true);
+        canvas.addEventListener('mouseup', () => spacePressed = false);
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            spacePressed = true;
+        });
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            spacePressed = false;
+        });
+        
+        // Start the cyberpunk experience
+        gameLoop();
+    </script>
+</body>
+</html> 
